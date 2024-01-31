@@ -1,0 +1,231 @@
+﻿@page "/productos"
+@using DineFlow.Data
+@inject HttpClient HttpClient
+@using System;
+@using System.Net.Http
+@using System.Net.Http.Json
+@using Newtonsoft.Json;
+@inject NavigationManager oMenu
+@inject IJSRuntime JSRuntime
+
+
+
+<Toasts class="p-3" Messages="messages" AutoHide="true" Delay="6000" Placement="ToastsPlacement.BottomRight" />
+<h3 style="text-align:center">Productos</h3>
+
+<!-- Botón para abrir el formulario de agregar -->
+<button class="btn btn-success" @onclick="AbrirFormularioAgregar">Agregar Producto</button>
+
+<!-- Lista de productos -->
+@if (productos != null && productos.Any())
+{
+    <table class="table">
+        <thead>
+            <tr>
+                <th></th>
+                <th>Nombre</th>
+                <th>Precio</th>
+                <th>Descripción</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var producto in productos)
+            {
+                <tr>
+                    <td>
+                        <button class="btn btn-dark" @onclick="() => AbrirFormularioModificar(producto)"><i class="bi bi-pen"></i></button>
+                    </td>
+                    <td>@producto.nombre_platillo</td>
+                    <td>@producto.costo.ToString("C0", new System.Globalization.CultureInfo("es-US"))</td>
+                    <td>@producto.descripcion_platillo</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+else
+{
+    <p>No hay productos disponibles.</p>
+}
+
+<Blazorise.Modal @ref="modalProducto" Closing="@OnModalClosing">
+    <ModalContent>
+        <ModalHeader>
+            <ModalTitle>Producto</ModalTitle>
+            <CloseButton />
+        </ModalHeader>
+        <ModalBody>
+            <div class="card">
+                <div class="card-header">@modalTitle</div>
+                <div class="card-body">
+                    <img src="@($"data:image/jpeg;base64,{imagenBase64}")" style="height:200px" />
+                    <div class="form-group">
+                        <label for="NombreProducto">Nombre:</label>
+                        <input type="text" class="form-control" id="NombreProducto" @bind="productoActual.nombre_platillo" />
+                    </div>
+                    <div class="form-group">
+                        <label for="Costo">Costo:</label>
+                        <CurrencyInput TValue="int" @bind-Value="productoActual.costo" Placeholder="Enter amount" />
+                    </div>
+                    <div class="form-group">
+                        <label for="DescripcionProducto">Descripción:</label>
+                        <input type="text" class="form-control" id="DescripcionProducto" @bind="productoActual.descripcion_platillo" />
+                    </div>
+                    <div class="mb-3" style="text-align:left">
+                        <label for="imagenInput" class="form-label">Imagen</label>
+                        <InputFile id="imagenInput" OnChange="HandleFileChange" class="form-control" />
+                    </div>
+
+                    <button class="btn btn-primary" @onclick="GuardarProducto">Guardar</button>
+                    <button class="btn btn-danger" @onclick="() => EliminarProducto(productoActual.id_platillo, productoActual.id_usuarios)">Eliminar</button>
+                </div>
+            </div>
+        </ModalBody>
+    </ModalContent>
+</Blazorise.Modal>
+
+@* @Newtonsoft.Json.JsonConvert.SerializeObject(productoActual) *@
+@code {
+    private List<Platillo> productos;
+    private Platillo productoActual = new Platillo();
+    private string modalTitle;
+    private Blazorise.Modal modalProducto;
+    [Inject] protected PreloadService PreloadService { get; set; }
+
+    public Cuenta usuario = new Cuenta();
+    protected override async Task OnInitializedAsync()
+    {
+        var temp = await JSRuntime.InvokeAsync<string>("localStorage.getItem", "user");
+        if (temp != null)
+        {
+            usuario = Newtonsoft.Json.JsonConvert.DeserializeObject<Cuenta>(temp);
+        }
+        await CargarProductos();
+    }
+
+    private async Task AbrirFormularioAgregar()
+    {
+        // Limpiar el modelo antes de abrir el formulario
+        productoActual = new Platillo();
+        imagenBase64 = productoActual.imagen;
+        modalTitle = "Agregar Producto";
+        await modalProducto.Show();
+    }
+
+    private async Task AbrirFormularioModificar(Platillo producto)
+    {
+        // Copiar el producto actual antes de abrir el formulario
+        productoActual = new Platillo
+            {
+                id_platillo = producto.id_platillo,
+                nombre_platillo = producto.nombre_platillo,
+                costo = producto.costo,
+                descripcion_platillo = producto.descripcion_platillo,
+                imagen = producto.imagen,
+                id_usuarios = producto.id_usuarios
+            };
+
+        imagenBase64 = productoActual.imagen;
+        modalTitle = "Modificar Producto";
+        await modalProducto.Show();
+    }
+
+    private async Task CerrarFormulario()
+    {
+        await modalProducto.Hide();
+    }
+
+    private async Task GuardarProducto()
+    {
+        string Url;
+        // Determinar si es una operación de agregar o modificar
+        if (productoActual.id_platillo == 0)
+        {
+            Url = "agregar_platillo.php";
+        }
+        else
+        {
+            Url = "modificar_platillo.php";
+        }
+        // Realizar la solicitud POST para agregar o modificar el producto
+        productoActual.id_usuarios = usuario.id_usuarios;
+        var response = await HttpClient.PostAsJsonAsync<Platillo>(Url, productoActual);
+
+        var content = await response.Content.ReadAsStringAsync();
+
+        // Recargar la lista de productos después de agregar/modificar
+        await CargarProductos();
+        await CerrarFormulario();
+    }
+
+    private async Task EliminarProducto(int productoId, int userId)
+    {
+        bool confirmed = await JSRuntime.InvokeAsync<bool>("confirm", "Está seguro de borrar el producto?");
+        if (confirmed)
+        {
+            productoActual = new Platillo();
+            productoActual.id_platillo = productoId;
+            productoActual.id_usuarios = userId;
+            // Realizar la solicitud POST para eliminar el producto
+            string Url = "eliminar_platillo.php";
+            var response = await HttpClient.PostAsJsonAsync<Platillo>(Url, productoActual);
+
+            // Manejar la respuesta según tus necesidades
+
+            // Recargar la lista de productos después de eliminar
+            await CargarProductos();
+            await CerrarFormulario();
+        }
+    }
+
+    private async Task CargarProductos()
+    {
+        PreloadService.Show(SpinnerColor.Dark, "Loading data...");
+
+        // Realizar la solicitud GET para obtener la lista de productos
+        var oRespuesta = await HttpClient.GetFromJsonAsync<Respuesta<List<Platillo>>>("mostrar_platillos.php?id=" + usuario.id_usuarios);
+        Console.WriteLine(oRespuesta.message);
+
+        productos = oRespuesta.data;
+        PreloadService.Hide();
+
+    }
+
+    private string imagenBase64;
+
+    private async Task HandleFileChange(InputFileChangeEventArgs e)
+    {
+        var archivo = e.GetMultipleFiles().FirstOrDefault();
+        if (archivo != null)
+        {
+            var buffer = new byte[archivo.Size];
+            await archivo.OpenReadStream().ReadAsync(buffer);
+            imagenBase64 = Convert.ToBase64String(buffer);
+            productoActual.imagen = imagenBase64;
+        }
+    }
+
+    //evita que los modales se cierren
+    private bool cancelClose;
+    private Task OnModalClosing(ModalClosingEventArgs e)
+    {
+        // just set Cancel to prevent modal from closing
+        e.Cancel = cancelClose
+            || e.CloseReason != CloseReason.UserClosing;
+
+        return Task.CompletedTask;
+    }
+
+    List<ToastMessage> messages = new List<ToastMessage>();
+
+    private void ShowMessage(ToastType toastType, string obser) => messages.Add(CreateToastMessage(toastType, obser));
+
+    private ToastMessage CreateToastMessage(ToastType toastType, string obser)
+    => new ToastMessage
+        {
+            Type = toastType,
+            Title = "DineFlow Notificación",
+            HelpText = $"{DateTime.Now}",
+            Message = obser,
+        };
+}

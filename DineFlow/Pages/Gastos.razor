@@ -1,0 +1,213 @@
+﻿@page "/gastos"
+@using DineFlow.Data
+@inject HttpClient HttpClient
+@using System;
+@using System.Net.Http
+@using System.Net.Http.Json
+@using System.Globalization;
+@using Newtonsoft.Json;
+@inject NavigationManager oMenu
+@inject IJSRuntime JSRuntime
+
+
+<Toasts class="p-3" Messages="messages" AutoHide="true" Delay="6000" Placement="ToastsPlacement.BottomRight" />
+<h3 style="text-align:center">Gastos</h3>
+
+<!-- Botón para abrir el formulario de agregar -->
+<button class="btn btn-success" @onclick="AbrirFormularioAgregar">Agregar Gasto</button>
+
+<!-- Lista de gastos -->
+@if (gastos != null && gastos.Any())
+{
+    <table class="table">
+        <thead>
+            <tr>
+                <th></th>
+                <th>Fecha</th>
+                <th>Valor</th>
+                <th>Descripción</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var gasto in gastos)
+            {
+                <tr>
+                    <td>
+                        <button class="btn btn-dark" @onclick="() => AbrirFormularioModificar(gasto)"><i class="bi bi-pen"></i></button>
+                    </td>
+                    <td>@gasto.fecha_gasto.ToString("yyyy-MM-dd HH:mm:ss")</td>
+                    <td>@gasto.monto.ToString("C0", new System.Globalization.CultureInfo("es-US"))</td>
+                    <td>@gasto.descripcion_gasto</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+else
+{
+    <p>No hay gastos disponibles.</p>
+}
+
+<Blazorise.Modal @ref="modalGasto" Closing="@OnModalClosing">
+    <ModalContent>
+        <ModalHeader>
+            <ModalTitle>Gasto</ModalTitle>
+            <CloseButton />
+        </ModalHeader>
+        <ModalBody>
+            <div class="card">
+                <div class="card-header">@modalTitle</div>
+                <div class="card-body">
+                    <div class="form-group">
+                        <label for="FechaGasto">Fecha:</label>
+                        <input type="datetime" class="form-control" id="FechaGasto" @bind="gastoActual.fecha_gasto" />
+                    </div>
+                    <div class="form-group">
+                        <label for="Monto">Monto:</label>
+                        <CurrencyInput TValue="decimal" @bind-Value="gastoActual.monto" Placeholder="Enter amount" />
+                    </div>
+                    <div class="form-group mb-3">
+                        <label for="DescripcionGasto">Descripción:</label>
+                        <input type="text" class="form-control" id="DescripcionGasto" @bind="gastoActual.descripcion_gasto" />
+                    </div>
+
+                    <button class="btn btn-primary" @onclick="GuardarGasto">Guardar</button>
+                    <button class="btn btn-danger" @onclick="() => EliminarGasto(gastoActual.id_gastos, gastoActual.id_usuarios)">Eliminar</button>
+                </div>
+            </div>
+        </ModalBody>
+    </ModalContent>
+</Blazorise.Modal>
+
+@* @Newtonsoft.Json.JsonConvert.SerializeObject(gastoActual) *@
+@code {
+    private List<Gasto> gastos;
+    private Gasto gastoActual = new Gasto();
+    private string modalTitle;
+    private Blazorise.Modal modalGasto;
+    [Inject] protected PreloadService PreloadService { get; set; }
+
+
+    public Cuenta usuario = new Cuenta();
+    protected override async Task OnInitializedAsync()
+    {
+        var temp = await JSRuntime.InvokeAsync<string>("localStorage.getItem", "user");
+        if (temp != null)
+        {
+            usuario = Newtonsoft.Json.JsonConvert.DeserializeObject<Cuenta>(temp);
+        }
+        await CargarGastos();
+    }
+
+    private async Task AbrirFormularioAgregar()
+    {
+        // Limpiar el modelo antes de abrir el formulario
+        gastoActual = new Gasto();
+        gastoActual.fecha_gasto = DateTime.Now;
+        modalTitle = "Agregar Gasto";
+        await modalGasto.Show();
+    }
+
+    private async Task AbrirFormularioModificar(Gasto gasto)
+    {
+        // Copiar el gasto actual antes de abrir el formulario
+        gastoActual = new Gasto
+            {
+                id_gastos = gasto.id_gastos,
+                fecha_gasto = gasto.fecha_gasto,
+                monto = gasto.monto,
+                descripcion_gasto = gasto.descripcion_gasto,
+                id_usuarios = gasto.id_usuarios
+            };
+        modalTitle = "Modificar Gasto";
+        await modalGasto.Show();
+    }
+
+    private async Task CerrarFormulario()
+    {
+        await modalGasto.Hide();
+    }
+
+    private async Task GuardarGasto()
+    {
+        string Url;
+        // Determinar si es una operación de agregar o modificar
+        if (gastoActual.id_gastos == 0)
+        {
+            gastoActual.fecha_gasto = DateTime.Now;
+            Url = "agregar_gasto.php";
+
+        }
+        else
+        {
+            Url = "modificar_gasto.php";
+
+        }
+        // Realizar la solicitud POST para agregar o modificar el gasto
+        gastoActual.id_usuarios = usuario.id_usuarios;
+        var response = await HttpClient.PostAsJsonAsync<Gasto>(Url, gastoActual);
+
+        var content = await response.Content.ReadAsStringAsync();
+
+        // Recargar la lista de gastos después de agregar/modificar
+        await CargarGastos();
+        await CerrarFormulario();
+    }
+
+    private async Task EliminarGasto(int gastoId, int userId)
+    {
+        bool confirmed = await JSRuntime.InvokeAsync<bool>("confirm", "Está seguro de borrar el gasto?");
+        if (confirmed)
+        {
+            gastoActual = new Gasto();
+            gastoActual.id_gastos = gastoId;
+            gastoActual.id_usuarios = userId;
+            // Realizar la solicitud POST para eliminar el gasto
+            string Url = "eliminar_gasto.php";
+            var response = await HttpClient.PostAsJsonAsync<Gasto>(Url, gastoActual);
+
+            // Manejar la respuesta según tus necesidades
+
+            // Recargar la lista de gastos después de eliminar
+            await CargarGastos();
+            await CerrarFormulario();
+        }
+    }
+
+    private async Task CargarGastos()
+    {
+        PreloadService.Show(SpinnerColor.Dark, "Loading data...");
+
+        // Realizar la solicitud GET para obtener la lista de gastos
+        var oRespuesta = await HttpClient.GetFromJsonAsync<Respuesta<List<Gasto>>>("mostrar_gastos.php?id=" + usuario.id_usuarios);
+        
+
+        gastos = oRespuesta.data;
+        PreloadService.Hide();
+
+    }
+
+    //evita que los modales se cierren
+    private bool cancelClose;
+    private Task OnModalClosing(ModalClosingEventArgs e)
+    {
+        // just set Cancel to prevent modal from closing
+        e.Cancel = cancelClose
+            || e.CloseReason != CloseReason.UserClosing;
+
+        return Task.CompletedTask;
+    }
+
+    List<ToastMessage> messages = new List<ToastMessage>();
+
+    private void ShowMessage(ToastType toastType, string obser) => messages.Add(CreateToastMessage(toastType, obser));
+
+    private ToastMessage CreateToastMessage(ToastType toastType, string obser)
+    => new ToastMessage
+        {
+            Type = toastType,
+            Title = "DineFlow Notificación",
+            HelpText = $"{DateTime.Now}",
+            Message = obser,
+        };
+}

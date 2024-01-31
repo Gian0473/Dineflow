@@ -1,0 +1,220 @@
+﻿@page "/proveedores"
+@using DineFlow.Data
+@inject HttpClient HttpClient
+@using System;
+@using System.Net.Http
+@using System.Net.Http.Json
+@using System.Globalization;
+@using Newtonsoft.Json;
+@inject NavigationManager oMenu
+@inject IJSRuntime JSRuntime
+
+
+
+<Toasts class="p-3" Messages="messages" AutoHide="true" Delay="6000" Placement="ToastsPlacement.BottomRight" />
+<h3 style="text-align:center">Proveedores</h3>
+
+<!-- Botón para abrir el formulario de agregar -->
+<button class="btn btn-success" @onclick="AbrirFormularioAgregar">Agregar Proveedor</button>
+
+<!-- Lista de proveedores -->
+@if (proveedores != null && proveedores.Any())
+{
+    <table class="table">
+        <thead>
+            <tr>
+                <th></th>
+                <th>Nombre Empresa</th>
+                <th>Teléfono</th>
+                <th>Dirección</th>
+                <th>Email</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var proveedor in proveedores)
+            {
+                <tr>
+                    <td>
+                        <button class="btn btn-dark" @onclick="() => AbrirFormularioModificar(proveedor)"><i class="bi bi-pen"></i></button>
+                    </td>
+                    <td>@proveedor.nombre_empresa</td>
+                    <td>@proveedor.telefono</td>
+                    <td>@proveedor.direccion</td>
+                    <td>@proveedor.email</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+else
+{
+    <p>No hay proveedores disponibles.</p>
+}
+
+<Blazorise.Modal @ref="modalProveedor" Closing="@OnModalClosing">
+    <ModalContent>
+        <ModalHeader>
+            <ModalTitle>Proveedor</ModalTitle>
+            <CloseButton />
+        </ModalHeader>
+        <ModalBody>
+            <div class="card">
+                <div class="card-header">@modalTitle</div>
+                <div class="card-body">
+                    <div class="form-group">
+                        <label for="nombreEmpresa">Nombre de Empresa:</label>
+                        <input type="text" class="form-control" id="nombreEmpresa" @bind="proveedorActual.nombre_empresa" />
+                    </div>
+                    <div class="form-group">
+                        <label for="nombreEmpresa">Telefono:</label>
+                        <input type="text" class="form-control" id="nombreEmpresa" @bind="proveedorActual.telefono" />
+                    </div>
+                    <div class="form-group">
+                        <label for="nombreEmpresa">Dirección:</label>
+                        <input type="text" class="form-control" id="nombreEmpresa" @bind="proveedorActual.direccion" />
+                    </div>
+                    <div class="form-group mb-3">
+                        <label for="nombreEmpresa">Email:</label>
+                        <input type="text" class="form-control" id="nombreEmpresa" @bind="proveedorActual.email" />
+                    </div>
+
+                    <button class="btn btn-primary" @onclick="GuardarProveedor">Guardar</button>
+                    <button class="btn btn-danger" @onclick="() => EliminarProveedor(proveedorActual.id_proveedores)">Eliminar</button>
+
+                </div>
+            </div>
+        </ModalBody>
+    </ModalContent>
+</Blazorise.Modal>
+
+@* @Newtonsoft.Json.JsonConvert.SerializeObject(proveedorActual) *@
+@code {
+    private List<Proveedor> proveedores;
+    private Proveedor proveedorActual = new Proveedor();
+    private string modalTitle;
+    private Blazorise.Modal modalProveedor;
+    [Inject] protected PreloadService PreloadService { get; set; }
+
+    public Cuenta usuario = new Cuenta();
+    protected override async Task OnInitializedAsync()
+    {
+        var temp = await JSRuntime.InvokeAsync<string>("localStorage.getItem", "user");
+        if (temp != null)
+        {
+            usuario = Newtonsoft.Json.JsonConvert.DeserializeObject<Cuenta>(temp);
+        }
+        await CargarProveedores();
+    }
+
+    private async Task AbrirFormularioAgregar()
+    {
+        // Limpiar el modelo antes de abrir el formulario
+        proveedorActual = new Proveedor();
+        modalTitle = "Agregar Proveedor";
+        await modalProveedor.Show();
+    }
+
+    private async Task AbrirFormularioModificar(Proveedor proveedor)
+    {
+        // Copiar el proveedor actual antes de abrir el formulario
+        proveedorActual = new Proveedor
+            {
+                id_proveedores = proveedor.id_proveedores,
+                nombre_empresa = proveedor.nombre_empresa,
+                telefono = proveedor.telefono,
+                direccion = proveedor.direccion,
+                email = proveedor.email,
+                id_usuarios = proveedor.id_usuarios
+            };
+        modalTitle = "Modificar Proveedor";
+        await modalProveedor.Show();
+    }
+
+    private async Task CerrarFormulario()
+    {
+        await modalProveedor.Hide();
+    }
+
+    private async Task GuardarProveedor()
+    {
+        string Url;
+        // Determinar si es una operación de agregar o modificar
+        if(proveedorActual.id_proveedores == 0)
+        {
+            Url = "agregar_proveedor.php";
+
+        }
+        else
+        {
+            Url = "modificar_proveedor.php";
+
+        }
+        // Realizar la solicitud POST para agregar o modificar el proveedor
+        proveedorActual.id_usuarios = usuario.id_usuarios;
+        var response = await HttpClient.PostAsJsonAsync<Proveedor>(Url, proveedorActual);
+
+        var content = await response.Content.ReadAsStringAsync();
+
+
+
+        // Recargar la lista de proveedores después de agregar/modificar
+        await CargarProveedores();
+        await CerrarFormulario();
+    }
+
+    private async Task EliminarProveedor(int proveedorId)
+    {
+        bool confirmed = await JSRuntime.InvokeAsync<bool>("confirm", "Está seguro de borrar el proveedor?");
+        if (confirmed)
+        {
+            proveedorActual = new Proveedor();
+            proveedorActual.id_proveedores = proveedorId;
+            // Realizar la solicitud POST para eliminar el proveedor
+            string Url = "eliminar_proveedor.php";
+            var response = await HttpClient.PostAsJsonAsync<Proveedor>(Url, proveedorActual);
+
+            // Manejar la respuesta según tus necesidades
+
+            // Recargar la lista de proveedores después de eliminar
+            await CargarProveedores();
+            await CerrarFormulario();
+        }
+    }
+
+    private async Task CargarProveedores()
+    {
+        PreloadService.Show(SpinnerColor.Dark, "Loading data...");
+
+        // Realizar la solicitud GET para obtener la lista de proveedores
+        var oRespuesta = await HttpClient.GetFromJsonAsync<Respuesta<List<Proveedor>>>("mostrar_proveedores.php?id=" + usuario.id_usuarios);
+        
+
+        proveedores = oRespuesta.data;
+        PreloadService.Hide();
+
+    }
+
+    //evita que los modales se cierren
+    private bool cancelClose;
+    private Task OnModalClosing(ModalClosingEventArgs e)
+    {
+        // just set Cancel to prevent modal from closing
+        e.Cancel = cancelClose
+            || e.CloseReason != CloseReason.UserClosing;
+
+        return Task.CompletedTask;
+    }
+
+    List<ToastMessage> messages = new List<ToastMessage>();
+
+    private void ShowMessage(ToastType toastType, string obser) => messages.Add(CreateToastMessage(toastType, obser));
+
+    private ToastMessage CreateToastMessage(ToastType toastType, string obser)
+    => new ToastMessage
+        {
+            Type = toastType,
+            Title = "DineFlow Notificación",
+            HelpText = $"{DateTime.Now}",
+            Message = obser,
+        };
+}

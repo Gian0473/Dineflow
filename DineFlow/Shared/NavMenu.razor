@@ -1,0 +1,99 @@
+﻿@inject IJSRuntime JSRuntime
+
+<div class="top-row ps-3 navbar navbar-dark" style="background-image: linear-gradient(180deg, rgb(202 169 88) 0%, #fedb01 100%);">
+    <div class="container-fluid">
+        <a class="navbar-brand" href="login" style="color: black;font-family: serif;font-weight: bold;font-size: x-large;">DineFlow</a>
+        <button title="Navigation menu" class="navbar-toggler" @onclick="ToggleNavMenu">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+    </div>
+</div>
+
+
+@if (sesion)
+{
+
+    <div class="@NavMenuCssClass nav-scrollable" @onclick="ToggleNavMenu">
+        <nav class="flex-column">
+            <div class="nav-item px-3">
+                <NavLink class="nav-link" href="" Match="NavLinkMatch.All">
+                    <span class="oi oi-home" aria-hidden="true"></span> Home
+                </NavLink>
+            </div>
+            <div class="nav-item px-3">
+                <NavLink class="nav-link" href="tomarpedido">
+                    <span class="oi bi-tablet-fill" aria-hidden="true"></span> Tomar Pedido
+                </NavLink>
+            </div>
+            <div class="nav-item px-3">
+                <NavLink class="nav-link" href="historicopedidos">
+                    <span class="oi bi-list-ul" aria-hidden="true"></span> Historico Pedidos
+                </NavLink>
+            </div>
+            <div class="nav-item px-3">
+                <NavLink class="nav-link" href="proveedores">
+                    <span class="oi bi-building-fill-add" aria-hidden="true"></span> Proveedores
+                </NavLink>
+            </div>
+            <div class="nav-item px-3">
+                <NavLink class="nav-link" href="gastos">
+                    <span class="oi bi-cash-coin" aria-hidden="true"></span> Gastos
+                </NavLink>
+            </div>
+            <div class="nav-item px-3">
+                <NavLink class="nav-link" href="ingresos">
+                    <span class="oi bi-piggy-bank-fill" aria-hidden="true"></span> Ingresos
+                </NavLink>
+            </div>
+            <div class="nav-item px-3">
+                <NavLink class="nav-link" href="productos">
+                    <span class="oi bi-egg-fill" aria-hidden="true"></span> Productos
+                </NavLink>
+            </div>
+            <div class="nav-item px-3">
+                <NavLink class="nav-link" href="mesas">
+                    <span class="oi bi-tablet-fill" aria-hidden="true"></span> Gestionar Mesas
+                </NavLink>
+            </div>
+            <div class="nav-item px-3">
+                <NavLink class="nav-link" href="modificar-cuenta">
+                    <span class="oi bi-person-circle" aria-hidden="true"></span> Cuenta
+                </NavLink>
+            </div>
+            <div class="nav-item px-3" @onclick="Salir">
+                <NavLink class="nav-link" href="#" Match="NavLinkMatch.All">
+                    <div class="col-sm">
+                        <span class="oi bi-box-arrow-right" aria-hidden="true"></span> Cerrar Sesión
+                    </div>
+                </NavLink>
+            </div>
+        </nav>
+    </div>
+}
+@code {
+    private bool collapseNavMenu = true;
+
+    private string? NavMenuCssClass => collapseNavMenu ? "collapse" : null;
+
+    private void ToggleNavMenu()
+    {
+        collapseNavMenu = !collapseNavMenu;
+    }
+
+    public bool sesion = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var temp = await JSRuntime.InvokeAsync<string>("localStorage.getItem", "user");
+        if (temp != null)
+        {
+            sesion = true;
+        }
+    }
+
+    public async Task Salir()
+    {
+        await JSRuntime.InvokeAsync<string>("localStorage.removeItem", "user");
+        await JSRuntime.InvokeVoidAsync("location.reload");
+    }
+}

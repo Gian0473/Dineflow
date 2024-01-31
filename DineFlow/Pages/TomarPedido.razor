@@ -1,0 +1,421 @@
+﻿@page "/tomarpedido"
+@using DineFlow.Data
+@inject HttpClient HttpClient
+@using System;
+@using System.Net.Http
+@using System.Net.Http.Json
+@using System.Globalization;
+@using Newtonsoft.Json;
+@inject NavigationManager oMenu
+@inject IJSRuntime JSRuntime
+
+
+
+<Toasts class="p-3" Messages="messages" AutoHide="true" Delay="6000" Placement="ToastsPlacement.BottomRight" />
+<h3 style="text-align:center">Mesas</h3>
+<div class="row">
+    @foreach (var mesa in Mesas)
+    {
+        <div class="col-sm-4">
+            <div class="card btn btn-outline-warning" style="width: 18rem; margin: 10px;" @onclick="() => AbrirPedido(mesa.id_pedido, mesa.id_mesa)">
+                <div class="card-body" style="color:black !important">
+                    <h5 class="card-title">Mesa # @mesa.id_mesa</h5>
+                    @if (mesa.id_pedido == 0)
+                    {
+                        <p class="card-text">Disponible</p>
+                    }
+                    else
+                    {
+                        <p class="card-text" style="color:red">Pedido en curso</p>
+                    }
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+<Blazorise.Modal @ref="modalPedido" Closing="@OnModalClosing">
+    <ModalContent Size="Blazorise.ModalSize.ExtraLarge">
+        <ModalHeader>
+            <ModalTitle>Pedido</ModalTitle>
+        </ModalHeader>
+        <ModalBody>
+            <div class="card">
+                <div class="card-header"><h3 style="text-align:center">Detalle del Pedido</h3></div>
+                <div class="card-body row">
+                    <div class="col-md-6">
+                        <div class="form-group">
+                            <label for="CodigoQR">Número de Pedido:</label>
+                            <input type="text" class="form-control" id="CodigoQR" @bind="pedido.cabecera.pedido_numero" disabled />
+                        </div>
+                        <div class="form-group">
+                            <label for="CodigoQR">Mesa #:</label>
+                            <input type="text" class="form-control" id="CodigoQR" @bind="pedido.cabecera.id_mesa" disabled />
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="form-group">
+                            <label for="CodigoQR">Fecha:</label>
+                            <input type="datetime" class="form-control" id="CodigoQR" @bind="pedido.cabecera.fecha" disabled />
+                        </div>
+                        <div class="form-group">
+                            @* <label for="CodigoQR">Ingreso #:</label>
+                            <input type="datetime" class="form-control" id="CodigoQR" @bind="pedido.cabecera.id_ingresos" disabled /> *@
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div>
+                <button class="btn btn-dark" @onclick="AbrirAgregar">Agregar productos</button>
+                @if (pedido.detalle != null && pedido.detalle.Any())
+                {
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th></th>
+                                <th>Nombre del Producto</th>
+                                <th>Cantidad</th>
+                                <th>Precio Unitario</th>
+                                <th>Precio Total</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var detalle in pedido.detalle)
+                            {
+                                <tr>
+                                    <td>
+                                        @if(detalle.id_detalle != 0)
+                                        {
+                                            <button class="btn btn-danger" @onclick="() => BorrarPl(detalle.id_detalle)"><i class="bi bi-trash-fill"></i></button>
+                                        }
+                                    </td>
+                                    <td>@detalle.nombre_platillo</td>
+                                    <td><input type="number" class="form-control" id="CodigoQR" @bind="detalle.cantidad" style="max-width:76px" /></td>
+                                    <td>@detalle.costo.ToString("C0", new System.Globalization.CultureInfo("es-US"))</td>
+                                    <td>@((detalle.costo * detalle.cantidad).ToString("C0", new System.Globalization.CultureInfo("es-US")))</td>
+                                </tr>
+
+                            }
+                            <tr>
+                                <td></td>
+                                <td></td>
+                                <td></td>
+                                <td>Total:</td>
+                                <td>@total.ToString("C0", new System.Globalization.CultureInfo("es-US"))</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                }
+                else
+                {
+                    <p>No hay productos en el pedido, intente agregar uno.</p>
+                }
+            </div>
+        </ModalBody>
+        <ModalFooter>
+            @if (pedido.detalle != null && pedido.detalle.Any())
+            {
+                <button class="btn btn-success" @onclick="Guardar">Guardar</button>
+            }
+            <button class="btn btn-secondary" @onclick="CerrarPedido">Cancelar</button>
+            @if (idPedido != 0)
+            {
+                <button class="btn btn-danger" @onclick="Eliminar">Eliminar</button>
+                <button class="btn btn-primary" @onclick="Facturar">Facturar Pedido</button>
+            }
+        </ModalFooter>
+    </ModalContent>
+</Blazorise.Modal>
+
+
+<Blazorise.Modal @ref="modalAgregar" Closing="@OnModalClosing">
+    <ModalContent Size="Blazorise.ModalSize.ExtraLarge">
+        <ModalHeader>
+            <ModalTitle>Agregar Productos</ModalTitle>
+        </ModalHeader>
+        <ModalBody>
+            @if (platillos != null && platillos.Any())
+            {
+                <div class="row">
+                    @foreach (var platillo in platillos)
+                    {
+                        <div class="col-sm-4">
+                            <div class="card" style="width: 18rem; margin: 10px;">
+                                <div class="card-body" style="color:black !important">
+                                    <div style="height:10rem">
+                                        <img src="@($"data:image/jpeg;base64,{platillo.imagen}")" style="width: 15rem; max-height:100%" />
+                                    </div>
+                                    <h5 class="card-title">@platillo.nombre_platillo</h5>
+                                    <p class="card-text">@platillo.descripcion_platillo</p>
+                                    <p class="card-text">Precio: @platillo.costo.ToString("C0", new System.Globalization.CultureInfo("es-US"))</p>
+
+                                    <div class="form-group">
+                                        <label for="cantidad">Cantidad:</label>
+                                        <div class="container text-center">
+                                            <div class="row align-items-start">
+                                                <div class="col">
+                                                    <input type="number" class="form-control" id="cantidad" name="cantidad" min="0" @bind-value="platillo.cant">
+                                                </div>
+                                                <div class="col">
+                                                    <button type="submit" class="btn btn-primary" @onclick="() => AgregarP(platillo)">Agregar</button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+            else
+            {
+                <p>No hay productos, intente agregar uno.</p>
+            }
+
+        </ModalBody>
+        <ModalFooter>
+            <button class="btn btn-secondary" @onclick="CerrarAgregar">Cerrar</button>
+        </ModalFooter>
+    </ModalContent>
+</Blazorise.Modal>
+
+@code {
+    List<Mesa> Mesas = new List<Mesa>();
+    private List<Platillo> platillos;
+    private Blazorise.Modal modalPedido;
+    private Blazorise.Modal modalAgregar;
+
+    private Pedido pedido = new Pedido();
+    public int total = 0;
+    public int idPedido = 0;
+    [Inject] protected PreloadService PreloadService { get; set; }
+
+
+    public Cuenta usuario = new Cuenta();
+    protected override async Task OnInitializedAsync()
+    {
+        pedido.cabecera = new CabeceraPedido();
+        pedido.detalle = new List<DetallePedido>();
+        PreloadService.Show(SpinnerColor.Dark, "Loading data...");
+
+        var temp = await JSRuntime.InvokeAsync<string>("localStorage.getItem", "user");
+        if (temp != null)
+        {
+            usuario = Newtonsoft.Json.JsonConvert.DeserializeObject<Cuenta>(temp);
+        }
+        
+        var oRespuesta = await HttpClient.GetFromJsonAsync<Respuesta<List<Mesa>>>("mostrar_mesas.php?id=" + usuario.id_usuarios);
+
+        Mesas = oRespuesta.data;
+        PreloadService.Hide();
+
+    }
+
+    public async Task AbrirAgregar()
+    {
+
+        PreloadService.Show(SpinnerColor.Dark, "Loading data...");
+
+        var oRespuesta = await HttpClient.GetFromJsonAsync<Respuesta<List<Platillo>>>("mostrar_platillos.php?id=" + usuario.id_usuarios);
+
+        platillos = oRespuesta.data;
+        await modalAgregar.Show();
+        PreloadService.Hide();
+
+    }
+
+    public async Task CerrarAgregar()
+    {
+        await modalAgregar.Hide();
+    }
+
+    public async Task AbrirPedido(int idpedido, int idmesa)
+    {
+        PreloadService.Show(SpinnerColor.Dark, "Loading data...");
+
+        idPedido = 0;
+        pedido.cabecera = new CabeceraPedido();
+        pedido.detalle = new List<DetallePedido>();
+        pedido.cabecera.fecha = DateTime.Now;
+        pedido.cabecera.id_mesa = idmesa;
+        if (idpedido != 0)
+        {
+            var oRespuesta = await HttpClient.GetFromJsonAsync<Respuesta<Pedido>>("pedido_info.php?id=" + idpedido);
+            idPedido = idpedido;
+            pedido = oRespuesta.data;
+            CalcularTot();
+        }
+
+        await modalPedido.Show();
+        PreloadService.Hide();
+
+    }
+
+    public async Task CerrarPedido()
+    {
+        await modalPedido.Hide();
+    }
+
+    public void AgregarP(Platillo producto)
+    {
+        // Buscar si el platillo ya está en el detalle del pedido
+        var detalleExistente = pedido.detalle.FirstOrDefault(d => d.id_platillo == producto.id_platillo);
+
+        if (detalleExistente != null)
+        {
+            // Si el platillo ya está, solo aumentar la cantidad
+            detalleExistente.cantidad += producto.cant;
+        }
+        else
+        {
+            // Si el platillo no está, agregarlo al detalle del pedido
+            var temp = new DetallePedido
+                {
+                    nombre_platillo = producto.nombre_platillo,
+                    id_platillo = producto.id_platillo,
+                    cantidad = producto.cant,
+                    costo = producto.costo,
+                    id_pedido = idPedido
+                };
+
+            pedido.detalle.Add(temp);
+        }
+
+        // Restablecer la cantidad del producto a cero
+        producto.cant = 0;
+
+        // Calcular el total del pedido
+        CalcularTot();
+    }
+
+
+    public void CalcularTot()
+    {
+        total = 0;
+        foreach (var detalle in pedido.detalle)
+        {
+            total += detalle.costo * detalle.cantidad;
+        }
+    }
+
+    public async Task Guardar()
+    {
+        PreloadService.Show(SpinnerColor.Dark, "Loading data...");
+
+        string Url;
+        // Determinar si es una operación de agregar o modificar
+        if (idPedido == 0)
+        {
+            Url = "agregar_pedido.php";
+            pedido.cabecera.fecha = DateTime.Now;
+            pedido.cabecera.pedido_numero = string.Empty;
+        }
+        else
+        {
+            Url = "modificar_pedido.php";
+
+        }
+        // Realizar la solicitud POST para agregar o modificar el proveedor
+        pedido.cabecera.id_usuarios = usuario.id_usuarios;
+        var response = await HttpClient.PostAsJsonAsync<Pedido>(Url, pedido);
+        var content = response.Content.ReadFromJsonAsync<Respuesta<object>>().Result;
+        await OnInitializedAsync();
+        await modalPedido.Hide();
+        PreloadService.Hide();
+
+    }
+
+    public class EliminarP
+    {
+        public int id_pedido { get; set; }
+    }
+    public async Task Eliminar()
+    {
+        bool confirmed = await JSRuntime.InvokeAsync<bool>("confirm", "Está seguro de borrar el pedido?");
+        if (confirmed)
+        {
+            PreloadService.Show(SpinnerColor.Dark, "Loading data...");
+
+            EliminarP oEliminar = new EliminarP();
+            oEliminar.id_pedido = idPedido;
+            string Url = "eliminar_pedido.php";
+            var response = await HttpClient.PostAsJsonAsync<EliminarP>(Url, oEliminar);
+            var content = response.Content.ReadFromJsonAsync<Respuesta<object>>().Result;
+            await OnInitializedAsync();
+            await modalPedido.Hide();
+            PreloadService.Hide();
+
+        }
+    }
+
+    public async Task Facturar()
+    {
+        PreloadService.Show(SpinnerColor.Dark, "Loading data...");
+
+        await Guardar();
+        EliminarP oEliminar = new EliminarP();
+        oEliminar.id_pedido = idPedido;
+        string Url = "facturar_pedido.php";
+        var response = await HttpClient.PostAsJsonAsync<EliminarP>(Url, oEliminar);
+        var content = response.Content.ReadFromJsonAsync<Respuesta<object>>().Result;
+        await OnInitializedAsync();
+        await modalPedido.Hide();
+        PreloadService.Hide();
+
+    }
+
+    public class EliminarD
+    {
+        public int id_detalle { get; set; }
+    }
+    public async Task BorrarPl(int iddetalle)
+    {
+        // Verificar si hay más de un platillo en el detalle
+        if (pedido.detalle.Count > 1)
+        {
+            PreloadService.Show(SpinnerColor.Dark, "Loading data...");
+
+            EliminarD oEliminar = new EliminarD();
+            oEliminar.id_detalle = iddetalle;
+            string Url = "eliminar_platillo_pedido.php";
+            var response = await HttpClient.PostAsJsonAsync<EliminarD>(Url, oEliminar);
+            var content = response.Content.ReadFromJsonAsync<Respuesta<object>>().Result;
+            await OnInitializedAsync();
+            await modalPedido.Hide();
+            PreloadService.Hide();
+
+        }
+        else
+        {
+            bool confirmed = await JSRuntime.InvokeAsync<bool>("confirm", "Antes de poder borrar este producto debe agregar otro");
+        }
+    }
+
+
+
+    //evita que los modales se cierren
+    private bool cancelClose;
+    private Task OnModalClosing(ModalClosingEventArgs e)
+    {
+        // just set Cancel to prevent modal from closing
+        e.Cancel = cancelClose
+            || e.CloseReason != CloseReason.UserClosing;
+
+        return Task.CompletedTask;
+    }
+
+    List<ToastMessage> messages = new List<ToastMessage>();
+
+    private void ShowMessage(ToastType toastType, string obser) => messages.Add(CreateToastMessage(toastType, obser));
+
+    private ToastMessage CreateToastMessage(ToastType toastType, string obser)
+    => new ToastMessage
+        {
+            Type = toastType,
+            Title = "DineFlow Notificación",
+            HelpText = $"{DateTime.Now}",
+            Message = obser,
+        };
+
+}

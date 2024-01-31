@@ -1,0 +1,222 @@
+﻿@page "/ingresos"
+@using DineFlow.Data
+@inject HttpClient HttpClient
+@using System;
+@using System.Net.Http
+@using System.Net.Http.Json
+@using System.Globalization;
+@using Newtonsoft.Json;
+@inject NavigationManager oMenu
+@inject IJSRuntime JSRuntime
+
+
+<Toasts class="p-3" Messages="messages" AutoHide="true" Delay="6000" Placement="ToastsPlacement.BottomRight" />
+<h3 style="text-align:center">Ingresos</h3>
+
+<!-- Botón para abrir el formulario de agregar -->
+<button class="btn btn-success" @onclick="AbrirFormularioAgregar">Agregar Ingreso</button>
+
+<!-- Lista de ingresos -->
+@if (ingresos != null && ingresos.Any())
+{
+    <table class="table">
+        <thead>
+            <tr>
+                <th></th>
+                <th>Fecha</th>
+                <th>Valor</th>
+                <th>Descripción</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var ingreso in ingresos)
+            {
+                <tr>
+                    <td>
+                        <button class="btn btn-dark" @onclick="() => AbrirFormularioModificar(ingreso)"><i class="bi bi-pen"></i></button>
+                    </td>
+                    <td>@ingreso.fecha_ingreso.ToString("yyyy-MM-dd HH:mm:ss")</td>
+                    <td>@ingreso.monto.ToString("C0", new System.Globalization.CultureInfo("es-US"))</td>
+                    <td>@ingreso.descripcion_ingreso</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+else
+{
+    <p>No hay ingresos disponibles.</p>
+}
+
+<Blazorise.Modal @ref="modalIngreso" Closing="@OnModalClosing">
+    <ModalContent>
+        <ModalHeader>
+            <ModalTitle>Ingreso</ModalTitle>
+            <CloseButton />
+        </ModalHeader>
+        <ModalBody>
+            <div class="card">
+                <div class="card-header">@modalTitle</div>
+                <div class="card-body">
+                    <div class="form-group">
+                        <label for="FechaIngreso">Fecha:</label>
+                        <input type="datetime" class="form-control" id="FechaIngreso" @bind="ingresoActual.fecha_ingreso" disabled="@isd"/>
+                    </div>
+                    <div class="form-group">
+                        <label for="Monto">Monto:</label>
+                        <CurrencyInput TValue="decimal" @bind-Value="ingresoActual.monto" Placeholder="Enter amount" disabled="@isd"/>
+                    </div>
+                    <div class="form-group mb-3">
+                        <label for="DescripcionIngreso">Descripción:</label>
+                        <input type="text" class="form-control" id="DescripcionIngreso" @bind="ingresoActual.descripcion_ingreso" disabled="@isd" />
+                    </div>
+                    @if (isd)
+                    {
+                        <p style="color:red;text-align:center">No se puede modificar o eliminar porque es de un pedido facturado</p>
+                    }
+                    else
+                    {
+                        <button class="btn btn-primary" @onclick="GuardarIngreso">Guardar</button>
+                        <button class="btn btn-danger" @onclick="() => EliminarIngreso(ingresoActual.id_ingresos, ingresoActual.id_usuarios)">Eliminar</button>
+                    }
+                </div>
+            </div>
+        </ModalBody>
+    </ModalContent>
+</Blazorise.Modal>
+
+@* @Newtonsoft.Json.JsonConvert.SerializeObject(ingresoActual) *@
+@code {
+    private List<Ingreso> ingresos;
+    private Ingreso ingresoActual = new Ingreso();
+    private string modalTitle;
+    private Blazorise.Modal modalIngreso;
+    public bool isd = false;
+    [Inject] protected PreloadService PreloadService { get; set; }
+
+
+    public Cuenta usuario = new Cuenta();
+    protected override async Task OnInitializedAsync()
+    {
+        var temp = await JSRuntime.InvokeAsync<string>("localStorage.getItem", "user");
+        if (temp != null)
+        {
+            usuario = Newtonsoft.Json.JsonConvert.DeserializeObject<Cuenta>(temp);
+        }
+        await CargarIngresos();
+    }
+
+    private async Task AbrirFormularioAgregar()
+    {
+        isd = false;
+        // Limpiar el modelo antes de abrir el formulario
+        ingresoActual = new Ingreso();
+        ingresoActual.fecha_ingreso = DateTime.Now;
+        modalTitle = "Agregar Ingreso";
+        await modalIngreso.Show();
+    }
+
+    private async Task AbrirFormularioModificar(Ingreso ingreso)
+    {
+        // Copiar el ingreso actual antes de abrir el formulario
+        ingresoActual = new Ingreso
+            {
+                id_ingresos = ingreso.id_ingresos,
+                fecha_ingreso = ingreso.fecha_ingreso,
+                monto = ingreso.monto,
+                descripcion_ingreso = ingreso.descripcion_ingreso,
+                id_usuarios = ingreso.id_usuarios
+            };
+
+        var prefijo = "ingreso del pedido #";
+        isd = ingresoActual.descripcion_ingreso.StartsWith(prefijo);
+        modalTitle = "Modificar Ingreso";
+        await modalIngreso.Show();
+    }
+
+    private async Task CerrarFormulario()
+    {
+        await modalIngreso.Hide();
+    }
+
+    private async Task GuardarIngreso()
+    {
+        string Url;
+        // Determinar si es una operación de agregar o modificar
+        if (ingresoActual.id_ingresos == 0)
+        {
+            ingresoActual.fecha_ingreso = DateTime.Now;
+            Url = "agregar_ingreso.php";
+        }
+        else
+        {
+            Url = "modificar_ingreso.php";
+        }
+        // Realizar la solicitud POST para agregar o modificar el ingreso
+        ingresoActual.id_usuarios = usuario.id_usuarios;
+        var response = await HttpClient.PostAsJsonAsync<Ingreso>(Url, ingresoActual);
+
+        var content = await response.Content.ReadAsStringAsync();
+
+        // Recargar la lista de ingresos después de agregar/modificar
+        await CargarIngresos();
+        await CerrarFormulario();
+    }
+
+    private async Task EliminarIngreso(int ingresoId, int userId)
+    {
+        bool confirmed = await JSRuntime.InvokeAsync<bool>("confirm", "Está seguro de borrar el ingreso?");
+        if (confirmed)
+        {
+            ingresoActual = new Ingreso();
+            ingresoActual.id_ingresos = ingresoId;
+            ingresoActual.id_usuarios = userId;
+            // Realizar la solicitud POST para eliminar el ingreso
+            string Url = "eliminar_ingreso.php";
+            var response = await HttpClient.PostAsJsonAsync<Ingreso>(Url, ingresoActual);
+
+            // Manejar la respuesta según tus necesidades
+
+            // Recargar la lista de ingresos después de eliminar
+            await CargarIngresos();
+            await CerrarFormulario();
+        }
+    }
+
+    private async Task CargarIngresos()
+    {
+        PreloadService.Show(SpinnerColor.Dark, "Loading data...");
+
+        // Realizar la solicitud GET para obtener la lista de ingresos
+        var oRespuesta = await HttpClient.GetFromJsonAsync<Respuesta<List<Ingreso>>>("mostrar_ingresos.php?id=" + usuario.id_usuarios);
+        Console.WriteLine(oRespuesta.message);
+
+        ingresos = oRespuesta.data;
+        PreloadService.Hide();
+
+    }
+
+    //evita que los modales se cierren
+    private bool cancelClose;
+    private Task OnModalClosing(ModalClosingEventArgs e)
+    {
+        // just set Cancel to prevent modal from closing
+        e.Cancel = cancelClose
+            || e.CloseReason != CloseReason.UserClosing;
+
+        return Task.CompletedTask;
+    }
+
+    List<ToastMessage> messages = new List<ToastMessage>();
+
+    private void ShowMessage(ToastType toastType, string obser) => messages.Add(CreateToastMessage(toastType, obser));
+
+    private ToastMessage CreateToastMessage(ToastType toastType, string obser)
+    => new ToastMessage
+        {
+            Type = toastType,
+            Title = "DineFlow Notificación",
+            HelpText = $"{DateTime.Now}",
+            Message = obser,
+        };
+}

@@ -1,0 +1,31 @@
+﻿@inherits LayoutComponentBase
+@inject IJSRuntime JSRuntime
+@inject NavigationManager oMenu
+@using BlazorBootstrap
+
+<div class="page">
+    <div class="sidebar">
+        <NavMenu />
+    </div>
+
+    <main>
+        <div class="top-row px-4" style="background-image: linear-gradient(180deg, rgb(202 169 88) 0%, #fedb01 100%);">
+        </div>
+
+        <article class="content px-4">
+            @Body
+        </article>
+    </main>
+</div>
+<Preload LoadingText="Loading..." />
+
+@code{
+    protected override async Task OnInitializedAsync()
+    {
+        var temp = await JSRuntime.InvokeAsync<string>("localStorage.getItem", "user");
+        if (temp == null)
+        {
+            oMenu.NavigateTo("/login");
+        }
+    }
+}

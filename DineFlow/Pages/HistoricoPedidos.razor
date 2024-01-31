@@ -1,0 +1,81 @@
+﻿@page "/historicopedidos"
+@inject HttpClient HttpClient
+@using System.Net.Http.Json
+@using System.Net.Http
+@using System.Collections.Generic
+@using DineFlow.Data
+@using System;
+@using System.Globalization;
+@using Newtonsoft.Json;
+@inject NavigationManager oMenu
+@inject IJSRuntime JSRuntime
+
+<h3 style="text-align:center">Historial de Pedidos</h3>
+
+@if (historicoPedidos != null && historicoPedidos.Any())
+{
+    <table class="table">
+        <thead>
+            <tr>
+                <th></th>
+                <th>Pedido #</th>
+                <th>Fecha</th>
+                <th>Mesa #</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var pedido in historicoPedidos)
+            {
+                if(pedido.id_ingresos != 0)
+                {
+                    <tr>
+                        <td>
+                            <button class="btn btn-info" @onclick="() => IrAPedido(pedido.id_pedido)">Ver Detalle</button>
+                        </td>
+                        <td>@pedido.pedido_numero</td>
+                        <td>@pedido.fecha.ToString("yyyy-MM-dd HH:mm:ss")</td>
+                        <td>@pedido.id_mesa</td>
+                    </tr>
+                }
+            }
+        </tbody>
+    </table>
+}
+else
+{
+    <p>No hay historial de pedidos disponible.</p>
+}
+
+@code {
+    private List<CabeceraPedido> historicoPedidos;
+    [Inject] protected PreloadService PreloadService { get; set; }
+
+
+    public Cuenta usuario = new Cuenta();
+    protected override async Task OnInitializedAsync()
+    {
+        var temp = await JSRuntime.InvokeAsync<string>("localStorage.getItem", "user");
+        if (temp != null)
+        {
+            usuario = Newtonsoft.Json.JsonConvert.DeserializeObject<Cuenta>(temp);
+        }
+        historicoPedidos = await ObtenerHistoricoPedidos();
+    }
+
+    private async Task<List<CabeceraPedido>> ObtenerHistoricoPedidos()
+    {
+        PreloadService.Show(SpinnerColor.Dark, "Loading data...");
+
+        // Lógica para obtener el historial de pedidos desde la consulta
+        // Puedes adaptar esto según cómo obtienes tus datos en tu aplicación
+        var response = await HttpClient.GetFromJsonAsync<List<CabeceraPedido>>("mostrar_pedidos.php?id=" + usuario.id_usuarios);
+        PreloadService.Hide();
+        return response ?? new List<CabeceraPedido>();
+    }
+
+    private void IrAPedido(int idPedido)
+    {
+        // Navegar a la página de detalle del pedido
+        oMenu.NavigateTo($"/pedido/{idPedido}");
+    }
+}

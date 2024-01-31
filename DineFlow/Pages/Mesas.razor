@@ -1,0 +1,198 @@
+﻿@page "/mesas"
+@using DineFlow.Data
+@inject HttpClient HttpClient
+@using System;
+@using System.Net.Http
+@using System.Net.Http.Json
+@using Newtonsoft.Json;
+@inject NavigationManager oMenu
+@inject IJSRuntime JSRuntime
+
+
+
+<Toasts class="p-3" Messages="messages" AutoHide="true" Delay="6000" Placement="ToastsPlacement.BottomRight" />
+<h3 style="text-align:center">Mesas</h3>
+
+<!-- Botón para abrir el formulario de agregar -->
+<button class="btn btn-success" @onclick="AbrirFormularioAgregar">Agregar Mesa</button>
+
+<!-- Lista de mesas -->
+@if (mesas != null && mesas.Any())
+{
+    <table class="table">
+        <thead>
+            <tr>
+                <th></th>
+                <th>ID Mesa</th>
+                <th>Observaciones</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var mesa in mesas)
+            {
+                <tr>
+                    <td>
+                        <button class="btn btn-dark" @onclick="() => AbrirFormularioModificar(mesa)"><i class="bi bi-pen"></i></button>
+                    </td>
+                    <td>@mesa.id_mesa</td>
+                    <td>@mesa.codigo_qr</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+else
+{
+    <p>No hay mesas disponibles.</p>
+}
+
+<Blazorise.Modal @ref="modalMesa" Closing="@OnModalClosing">
+    <ModalContent>
+        <ModalHeader>
+            <ModalTitle>Mesa</ModalTitle>
+            <CloseButton />
+        </ModalHeader>
+        <ModalBody>
+            <div class="card">
+                <div class="card-header">@modalTitle</div>
+                <div class="card-body">
+                    <div class="form-group mb-3">
+                        <label for="CodigoQR">Observaciones(Opcional):</label>
+                        <input type="text" class="form-control" id="CodigoQR" @bind="mesaActual.codigo_qr" />
+                    </div>
+
+                    <button class="btn btn-primary" @onclick="GuardarMesa">Guardar</button>
+                    <button class="btn btn-danger" @onclick="() => EliminarMesa(mesaActual.id_mesa, mesaActual.id_usuarios)">Eliminar</button>
+                </div>
+            </div>
+        </ModalBody>
+    </ModalContent>
+</Blazorise.Modal>
+
+@* @Newtonsoft.Json.JsonConvert.SerializeObject(mesaActual) *@
+@code {
+    private List<Mesa> mesas;
+    private Mesa mesaActual = new Mesa();
+    private string modalTitle;
+    private Blazorise.Modal modalMesa;
+    [Inject] protected PreloadService PreloadService { get; set; }
+
+
+    public Cuenta usuario = new Cuenta();
+    protected override async Task OnInitializedAsync()
+    {
+        var temp = await JSRuntime.InvokeAsync<string>("localStorage.getItem", "user");
+        if (temp != null)
+        {
+            usuario = Newtonsoft.Json.JsonConvert.DeserializeObject<Cuenta>(temp);
+        }
+        await CargarMesas();
+    }
+
+    private async Task AbrirFormularioAgregar()
+    {
+        // Limpiar el modelo antes de abrir el formulario
+        mesaActual = new Mesa();
+        modalTitle = "Agregar Mesa";
+        mesaActual.codigo_qr = string.Empty;
+        await modalMesa.Show();
+    }
+
+    private async Task AbrirFormularioModificar(Mesa mesa)
+    {
+        // Copiar la mesa actual antes de abrir el formulario
+        mesaActual = new Mesa
+            {
+                id_mesa = mesa.id_mesa,
+                codigo_qr = mesa.codigo_qr,
+                id_usuarios = mesa.id_usuarios
+            };
+        modalTitle = "Modificar Mesa";
+        await modalMesa.Show();
+    }
+
+    private async Task CerrarFormulario()
+    {
+        await modalMesa.Hide();
+    }
+
+    private async Task GuardarMesa()
+    {
+        string Url;
+        // Determinar si es una operación de agregar o modificar
+        if (mesaActual.id_mesa == 0)
+        {
+            Url = "agregar_mesa.php";
+        }
+        else
+        {
+            Url = "modificar_mesa.php";
+        }
+        // Realizar la solicitud POST para agregar o modificar la mesa
+        mesaActual.id_usuarios = usuario.id_usuarios;
+        var response = await HttpClient.PostAsJsonAsync<Mesa>(Url, mesaActual);
+
+        var content = await response.Content.ReadAsStringAsync();
+
+        // Recargar la lista de mesas después de agregar/modificar
+        await CargarMesas();
+        await CerrarFormulario();
+    }
+
+    private async Task EliminarMesa(int mesaId, int userId)
+    {
+        bool confirmed = await JSRuntime.InvokeAsync<bool>("confirm", "Está seguro de borrar la mesa?");
+        if (confirmed)
+        {
+            mesaActual = new Mesa();
+            mesaActual.id_mesa = mesaId;
+            mesaActual.id_usuarios = userId;
+            // Realizar la solicitud POST para eliminar la mesa
+            string Url = "eliminar_mesa.php";
+            var response = await HttpClient.PostAsJsonAsync<Mesa>(Url, mesaActual);
+
+            // Manejar la respuesta según tus necesidades
+
+            // Recargar la lista de mesas después de eliminar
+            await CargarMesas();
+            await CerrarFormulario();
+        }
+    }
+
+    private async Task CargarMesas()
+    {
+        PreloadService.Show(SpinnerColor.Dark, "Loading data...");
+
+        // Realizar la solicitud GET para obtener la lista de mesas
+        var oRespuesta = await HttpClient.GetFromJsonAsync<Respuesta<List<Mesa>>>("mostrar_mesas.php?id=" + usuario.id_usuarios);
+        Console.WriteLine(oRespuesta.message);
+
+        mesas = oRespuesta.data;
+        PreloadService.Hide();
+
+    }
+
+    //evita que los modales se cierren
+    private bool cancelClose;
+    private Task OnModalClosing(ModalClosingEventArgs e)
+    {
+        // just set Cancel to prevent modal from closing
+        e.Cancel = cancelClose
+            || e.CloseReason != CloseReason.UserClosing;
+
+        return Task.CompletedTask;
+    }
+
+    List<ToastMessage> messages = new List<ToastMessage>();
+
+    private void ShowMessage(ToastType toastType, string obser) => messages.Add(CreateToastMessage(toastType, obser));
+
+    private ToastMessage CreateToastMessage(ToastType toastType, string obser)
+    => new ToastMessage
+        {
+            Type = toastType,
+            Title = "DineFlow Notificación",
+            HelpText = $"{DateTime.Now}",
+            Message = obser,
+        };
+}
